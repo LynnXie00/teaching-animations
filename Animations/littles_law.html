@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Little's Law — I = R × T (Interactive)</title>
+  <style>
+    :root{--bg:#0b1020;--panel:#11182e;--ink:#e8ebf7;--muted:#9aa6c3;--accent:#7aa2ff;--accent-2:#ffd166;--rail:#f6c67c33;--dot:#f6b31a}
+    html,body{height:100%}
+    body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center}
+    .app{width:min(1100px,95vw);}
+    .card{background:var(--panel);border-radius:18px;box-shadow:0 10px 30px #0006;padding:20px}
+    h1{margin:0 0 6px;font-size:22px}
+    .sub{color:var(--muted);margin-bottom:14px}
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr;}}
+    .viz{background:#0e1327;border-radius:14px;padding:16px;position:relative}
+    .metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:8px}
+    .metric{background:#0b1124;border:1px solid #1a2446;border-radius:12px;padding:10px}
+    .metric b{display:block;color:#cfe0ff;margin-bottom:4px;font-weight:600}
+    .controls{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}
+    @media (max-width:900px){.controls{grid-template-columns:1fr}}
+    .panel{background:#0b1124;border:1px solid #1a2446;border-radius:12px;padding:12px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .row label{font-size:13px;color:var(--muted)}
+    .row input[type="number"]{width:7ch;padding:6px 8px;border-radius:8px;border:1px solid #31406a;background:#0b1020;color:var(--ink)}
+    .btn{background:linear-gradient(180deg,#3c58ff,#2443ff);border:0;color:white;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600}
+    .btn.secondary{background:#1a2446}
+    .slider{width:100%}
+    .hint{font-size:13px;color:var(--muted)}
+    /* SVG styling */
+    .rail{stroke:var(--accent-2);stroke-opacity:.25;stroke-width:16}
+    .dot{fill:var(--dot);stroke:#00000055;stroke-width:1}
+    .tick{stroke:#ffffff22}
+  </style>
+</head>
+<body>
+  <div class="app card">
+    <h1>Little's Law — Inventory = Throughput rate × Flow time</h1>
+    <div class="sub">I = R × T. Drag the slider or press ▶ Play. Items move across the conveyor and exit after <em>T</em> seconds.</div>
+
+    <div class="grid">
+      <!-- Visualization -->
+      <section class="viz">
+        <svg id="scene" viewBox="0 0 1000 300" role="img" aria-label="Little's Law conveyor visualization">
+          <defs>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <!-- Title inside SVG for export screenshots -->
+          <text x="16" y="30" fill="#cfe0ff" font-size="18" font-weight="700">I ≈ R × T</text>
+
+          <!-- conveyor rail -->
+          <line class="rail" x1="60" x2="940" y1="170" y2="170" />
+          <!-- ticks -->
+          <g id="ticks"></g>
+          <!-- moving dots -->
+          <g id="dots"></g>
+
+          <!-- metric overlay -->
+          <g id="overlay" transform="translate(60,60)">
+            <text id="mI" x="0" y="0" fill="#fff" font-size="16" font-weight="600">I: —</text>
+            <text id="mR" x="0" y="26" fill="#cfe0ff" font-size="14">R: —</text>
+            <text id="mT" x="0" y="48" fill="#cfe0ff" font-size="14">T: —</text>
+            <text id="mRT" x="0" y="70" fill="#cfe0ff" font-size="14">Check: I ≈ R×T —</text>
+          </g>
+        </svg>
+        <div class="metrics">
+          <div class="metric"><b>I (now)</b><div id="I-now">—</div></div>
+          <div class="metric"><b>R × T</b><div id="RT-now">—</div></div>
+          <div class="metric"><b>R (avg to t)</b><div id="R-avg">—</div></div>
+          <div class="metric"><b>T (s)</b><div id="T-val">—</div></div>
+        </div>
+      </section>
+
+      <!-- Controls -->
+      <section class="controls">
+        <div class="panel">
+          <div class="row" style="margin-bottom:8px;gap:8px">
+            <button id="play" class="btn" title="Play/Pause">▶ Play</button>
+            <button id="reset" class="btn secondary" title="Reset to t=0">↺ Reset</button>
+            <label style="margin-left:auto">Speed× <input id="speed" type="number" min="0.25" max="8" step="0.25" value="1"></label>
+          </div>
+          <input id="time" class="slider" type="range" min="0" max="32" step="0.02" value="0" aria-label="timeline slider" />
+          <div class="row" style="justify-content:space-between">
+            <span class="hint">t = <span id="t-label">0.00</span> s</span>
+            <span class="hint">duration = <span id="duration-label">32</span> s</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="row" style="gap:16px;align-items:end">
+            <div>
+              <label>Throughput rate R (items/s)</label><br>
+              <input id="R" type="number" min="0.1" max="3" step="0.1" value="0.5">
+            </div>
+            <div>
+              <label>Flow time T (s)</label><br>
+              <input id="T" type="number" min="1" max="30" step="0.5" value="8">
+            </div>
+            <div>
+              <label>Duration (s)</label><br>
+              <input id="D" type="number" min="10" max="120" step="1" value="32">
+            </div>
+            <button id="apply" class="btn">Apply</button>
+          </div>
+          <div class="hint" style="margin-top:8px">Deterministic arrivals at every 1/R seconds; each item exits exactly T seconds after entry. This keeps the identity I = R×T visible and clean.</div>
+        </div>
+      </section>
+    </div>
+    <div class="hint" style="margin-top:10px">Tip: Commit this single file as <code>index.html</code> to any GitHub repository and enable <b>GitHub Pages</b> → "Deploy from a branch" → <code>main</code> / <code>root</code>.</div>
+  </div>
+
+  <script>
+    // ------------------
+    // Model parameters
+    // ------------------
+    let R = 0.5;      // items per second
+    let T = 8.0;      // seconds in system
+    let D = 32.0;     // duration (seconds)
+
+    // Rendering vars
+    const svg = document.getElementById('scene');
+    const gDots = document.getElementById('dots');
+    const gTicks = document.getElementById('ticks');
+
+    const I_now = document.getElementById('I-now');
+    const R_avg = document.getElementById('R-avg');
+    const T_val = document.getElementById('T-val');
+    const RT_now = document.getElementById('RT-now');
+
+    const mI = document.getElementById('mI');
+    const mR = document.getElementById('mR');
+    const mT = document.getElementById('mT');
+    const mRT = document.getElementById('mRT');
+
+    const timeSlider = document.getElementById('time');
+    const tLabel = document.getElementById('t-label');
+    const durLabel = document.getElementById('duration-label');
+    const btnPlay = document.getElementById('play');
+    const btnReset = document.getElementById('reset');
+    const speedInp = document.getElementById('speed');
+    const R_in = document.getElementById('R');
+    const T_in = document.getElementById('T');
+    const D_in = document.getElementById('D');
+    const btnApply = document.getElementById('apply');
+
+    // Coordinate helpers (SVG is 1000x300)
+    const x0 = 60, x1 = 940, yRail = 170; 
+    const L = x1 - x0;
+
+    // Precompute entry times for deterministic arrivals
+    let entries = [];
+    function recomputeEntries(){
+      entries = [];
+      let k = 0, ia = 1 / R; // interarrival
+      while (true){
+        const t = k * ia;
+        if (t > D + T) break; // include beyond duration to ensure exits compute near the end
+        entries.push(t);
+        k++;
+      }
+    }
+
+    function format(n){
+      return Number.isFinite(n) ? n.toFixed(2) : '—';
+    }
+
+    function updateTicks(){
+      // Vertical ticks every 2 seconds of progress along the rail (optional visual cue)
+      gTicks.innerHTML = '';
+      const n = Math.floor(T / 2);
+      for (let i=1;i<=n;i++){
+        const frac = i * (2 / T); // 2-second spacing
+        const x = x0 + frac * L;
+        const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+        line.setAttribute('x1',x); line.setAttribute('x2',x);
+        line.setAttribute('y1',yRail-12); line.setAttribute('y2',yRail+12);
+        line.setAttribute('class','tick');
+        gTicks.appendChild(line);
+      }
+    }
+
+    // Compute instantaneous inventory and departed count at time t
+    function metricsAt(t){
+      let I = 0, departed = 0;
+      for (const et of entries){
+        if (et <= t - T){
+          departed++;
+        } else if (et <= t){
+          I++;
+        } else {
+          break; // entries are ordered
+        }
+      }
+      const Rbar = t > 0 ? departed / t : 0; // average throughput until t
+      return {I, departed, Rbar};
+    }
+
+    function renderAt(t){
+      // Update labels
+      tLabel.textContent = format(t);
+
+      // Draw dots currently in system
+      gDots.innerHTML = '';
+      for (const et of entries){
+        const age = t - et;
+        if (age < 0) break; // not yet arrived
+        if (age <= T){
+          const frac = age / T;
+          const cx = x0 + frac * L;
+          const cy = yRail;
+          const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+          c.setAttribute('cx', cx);
+          c.setAttribute('cy', cy);
+          c.setAttribute('r', 9);
+          c.setAttribute('class','dot');
+          c.setAttribute('filter','url(#glow)');
+          gDots.appendChild(c);
+        }
+      }
+
+      // Metrics
+      const {I, departed, Rbar} = metricsAt(t);
+      const Itext = `${I} items`;
+      const RT = Rbar * T;
+      I_now.textContent = Itext;
+      R_avg.textContent = `${format(Rbar)} items/s`;
+      T_val.textContent = `${format(T)} s`;
+      RT_now.textContent = `${format(RT)} (R×T)`;
+
+      mI.textContent = `I (now) = ${I}`;
+      mR.textContent = `R (avg to t) = ${format(Rbar)} items/s`;
+      mT.textContent = `T (flow time) = ${format(T)} s`;
+      mRT.textContent = `Check: I ≈ R×T → ${format(I)} ≈ ${format(RT)}`;
+    }
+
+    // ------------------
+    // Timeline + play
+    // ------------------
+    let playing = false;
+    let lastTs = null;
+
+    function step(ts){
+      if (!playing){ lastTs = null; return; }
+      if (lastTs === null) lastTs = ts;
+      const speed = Math.max(0.25, Math.min(8, parseFloat(speedInp.value) || 1));
+      const dt = (ts - lastTs) / 1000 * speed; // seconds
+      lastTs = ts;
+      let t = parseFloat(timeSlider.value) + dt;
+      if (t >= D){ t = D; playing = false; btnPlay.textContent = '▶ Play'; }
+      timeSlider.value = t;
+      renderAt(t);
+      requestAnimationFrame(step);
+    }
+
+    btnPlay.addEventListener('click', () => {
+      playing = !playing;
+      btnPlay.textContent = playing ? '⏸ Pause' : '▶ Play';
+      if (playing) requestAnimationFrame(step);
+    });
+
+    btnReset.addEventListener('click', () => {
+      playing = false; btnPlay.textContent = '▶ Play';
+      timeSlider.value = 0; renderAt(0);
+    });
+
+    timeSlider.addEventListener('input', e => {
+      playing = false; btnPlay.textContent = '▶ Play';
+      renderAt(parseFloat(e.target.value));
+    });
+
+    // Apply parameter changes
+    btnApply.addEventListener('click', () => {
+      R = Math.max(0.1, Math.min(3, parseFloat(R_in.value) || R));
+      T = Math.max(1, Math.min(30, parseFloat(T_in.value) || T));
+      D = Math.max(10, Math.min(120, parseFloat(D_in.value) || D));
+      timeSlider.max = D; durLabel.textContent = D.toFixed(0);
+      recomputeEntries(); updateTicks();
+      // If I = R×T gets too high (too many dots), limit duration or advise
+      const targetI = R * T;
+      if (targetI > 80){
+        alert(`Heads up: R×T = ${targetI.toFixed(1)} items — that is a lot of dots. Consider lowering R or T for clarity.`);
+      }
+      // Keep current time within new duration
+      const t = Math.min(parseFloat(timeSlider.value), D);
+      timeSlider.value = t; renderAt(t);
+    });
+
+    // Initial bootstrap
+    function init(){
+      R_in.value = R; T_in.value = T; D_in.value = D;
+      timeSlider.value = 0; timeSlider.max = D; durLabel.textContent = D.toFixed(0);
+      recomputeEntries(); updateTicks(); renderAt(0);
+    }
+
+    init();
+  </script>
+</body>
+</html>
